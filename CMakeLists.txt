@@ -93,7 +93,7 @@ target_sources(ProfileEncoder
   PRIVATE
     FILE_SET CXX_MODULES
     FILES
-      "src/fs_utils.ixx"
+      "src/logger.ixx"
 )
 
 set_target_properties(ProfileEncoder 
