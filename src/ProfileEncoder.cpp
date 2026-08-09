@@ -1,10 +1,10 @@
 ﻿
 import std;
-import std.compat;
 import argparse;
 import logger;
+import helpers;
+import process_runner;
 
-// using std::println;
 using std::string;
 using std::string_view;
 using std::vector;
@@ -15,10 +15,16 @@ constexpr string_view LOG_FOLDER = "log";
 constexpr string_view PROFILE_FOLDER = "profiles";
 
 bool is_stat_disabled;
-// Logger* logger;
 
-static void configure_argument_parser(argparse::ArgumentParser& parser);
-[[nodiscard]] stdfs::path normalized_path(const std::string_view path_raw);
+void configure_argument_parser(argparse::ArgumentParser& parser);
+[[nodiscard]] vector<string> collect_profile_info(Logger& logger, const string& profile_raw);
+void process_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
+                        const string& input);
+
+std::filesystem::path cwd;
+std::filesystem::path exe_path;
+std::filesystem::path profile_path;
+std::filesystem::path log_path;
 
 int main(const int argc, const char* argv[])
 {
@@ -32,15 +38,16 @@ int main(const int argc, const char* argv[])
 
     const auto profileRaw = argumentParser.get<string>("--profile");
     auto inputs = argumentParser.get<vector<string>>("--input");
+    // auto y = argumentParser.get<bool>("-y");
     is_stat_disabled = argumentParser.get<bool>("--no-stat");
     const bool isLogDisabled = argumentParser.get<bool>("--no-log");
 
-    auto cwd = stdfs::current_path() / "";
-    auto exePath = stdfs::weakly_canonical(stdfs::path{argv[0]}).parent_path(); // https://stackoverflow.com/a/55579815
-    auto profilePath = exePath / PROFILE_FOLDER / "";
-    auto logPath = exePath / LOG_FOLDER / "";
+    cwd = stdfs::current_path() / "";
+    exe_path = normalized_path(argv[0]).parent_path(); // https://stackoverflow.com/a/55579815
+    profile_path = exe_path / PROFILE_FOLDER / "";
+    log_path = exe_path / LOG_FOLDER / "";
 
-    Logger logger{logPath, isLogDisabled};
+    Logger logger{log_path, isLogDisabled};
 
     // Log toggle info
     if (is_stat_disabled) {
@@ -50,52 +57,41 @@ int main(const int argc, const char* argv[])
         logger.Log("Console log disabled.");
     }
 
-    // Process profile
-    bool isLocalProfile = false;
-    if (profileRaw[0] == '.') {
-        isLocalProfile = true;
-    }
-    stdfs::path targetProfileFile;
-    if (isLocalProfile) {
-        targetProfileFile = cwd / stdfs::path{profileRaw.substr(1) + ".txt"};
-    }
-    else {
-        targetProfileFile = profilePath / stdfs::path{profileRaw + ".txt"};
+    vector<string> profileParams = collect_profile_info(logger, profileRaw);
+
+    // Process input files
+    vector<stdfs::path> targetFiles{};
+    std::unordered_set<stdfs::path> seen{};
+
+    for (const auto& input : inputs) {
+        process_input_file(logger, targetFiles, seen, input);
     }
 
-    if (!stdfs::exists(targetProfileFile)) {
-        logger.Log("Position {} does not contain given profile '{}'.",
-                   isLocalProfile ? cwd.generic_string() : profilePath.generic_string(),
-                   isLocalProfile ? profileRaw.substr(1) : profileRaw);
-        return 0;
-    }
-    if (!stdfs::is_regular_file(targetProfileFile)) {
-        logger.Log("Profile '{}' in position {} is not a valid file.", profileRaw,
-                   isLocalProfile ? cwd.generic_string() : profilePath.generic_string());
-        return 0;
-    }
+    for (const auto& target : targetFiles) {
+        const auto outputPath = target.parent_path() /
+            (target.stem().generic_string() + "_" + profileRaw + target.extension().generic_string());
 
-    // Read profile
-    std::ifstream profileFile{targetProfileFile};
-    if (!profileFile.is_open()) {
-        std::cerr << "Fatal error: cannot open profile file '" << targetProfileFile.generic_string() << "'.\n";
-        logger.Log("Fatal error: cannot open profile file '{}'", targetProfileFile.generic_string());
-        return 0;
+        logger.Log("Started to encode {} in profile {}.", target.generic_string(), profileRaw);
+        try {
+            const int exitCode = process_runner::run_ffmpeg(target, profileParams, outputPath);
+            if (exitCode == 0) {
+                logger.Log("Encoding {} successfully.", target.generic_string());
+            }
+            else {
+                logger.Log("Failed to encode {}.", target.generic_string());
+            }
+        }
+        catch (const std::exception ex) {
+            logger.Log("Fatal error: FFmpeg process error when encoding file '{}': {}", target.generic_string(),
+                       ex.what());
+            continue;
+        }
     }
-    vector<string> profileParams{};
-    string param;
-    while (profileFile >> param) {
-        profileParams.push_back(param);
-    }
-
-    logger.Log("Encoding with profile params {}", profileParams);
-
-    auto testPath1 = normalized_path(inputs[0]);
 
     return 0;
 }
 
-static void configure_argument_parser(argparse::ArgumentParser& parser)
+void configure_argument_parser(argparse::ArgumentParser& parser)
 {
     parser.add_description("Profile Encoder, a batch encoder for re-enc files in pre-defined profiles.");
     parser.add_argument("-p", "--profile")
@@ -107,12 +103,91 @@ static void configure_argument_parser(argparse::ArgumentParser& parser)
         .nargs(argparse::nargs_pattern::at_least_one)
         .help("Input files. Can be a single file or a txt that every single line refers to a file. Multiple input arg "
               "will be composed.");
+    // parser.add_argument("-y").flag().help("Automatically replace output file.");
     parser.add_argument("--no-stat").flag().help("Turn off statistics info.");
     parser.add_argument("--no-log").flag().help("Turn off command line log output. File log will still preserved.");
 }
 
-[[nodiscard]] stdfs::path normalized_path(const std::string_view path_raw)
+vector<string> collect_profile_info(Logger& logger, const string& profile_raw)
 {
-    stdfs::path path{path_raw};
-    return stdfs::weakly_canonical(path);
+    // Process profile
+    bool isLocalProfile = false;
+    if (profile_raw[0] == '.') {
+        isLocalProfile = true;
+    }
+    stdfs::path targetProfileFile;
+    if (isLocalProfile) {
+        targetProfileFile = cwd / stdfs::path{profile_raw.substr(1) + ".txt"};
+    }
+    else {
+        targetProfileFile = profile_path / stdfs::path{profile_raw + ".txt"};
+    }
+
+    if (!stdfs::exists(targetProfileFile)) {
+        logger.Log("Error: Position {} does not contain given profile '{}'.",
+                   isLocalProfile ? cwd.generic_string() : profile_path.generic_string(),
+                   isLocalProfile ? profile_raw.substr(1) : profile_raw);
+        throw std::runtime_error("Error: profile not found.");
+    }
+    if (!stdfs::is_regular_file(targetProfileFile)) {
+        logger.Log("Profile '{}' in position {} is not a valid file.", profile_raw,
+                   isLocalProfile ? cwd.generic_string() : profile_path.generic_string());
+        throw std::runtime_error("Error: profile not valid.");
+    }
+
+    // Read profile
+    std::ifstream profileFile{targetProfileFile};
+    if (!profileFile.is_open()) {
+        std::cerr << "Fatal error: cannot open profile file '" << targetProfileFile.generic_string() << "'.\n";
+        logger.Log("Fatal error: cannot open profile file '{}'", targetProfileFile.generic_string());
+        throw std::runtime_error("Fatal error: cannot open profile file.");
+    }
+    vector<string> profileParams{};
+    string param;
+    while (profileFile >> param) {
+        profileParams.push_back(param);
+    }
+
+    logger.Log("Encoding with profile params {}", profileParams);
+
+    profileFile.close();
+
+    return profileParams;
+}
+
+void process_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
+                        const string& input)
+{
+    std::filesystem::path inputPath = normalized_path(input);
+    if (!stdfs::exists(inputPath)) {
+        logger.Log("Error: input file {} does not exist. Skipped.", inputPath.generic_string());
+        return;
+    }
+    if (!stdfs::is_regular_file(inputPath)) {
+        logger.Log("Error: input file {} is not valid. Skipped.", inputPath.generic_string());
+        return;
+    }
+    if (is_txt(inputPath)) {
+        std::ifstream inputList{inputPath};
+
+        if (!inputList.is_open()) {
+            logger.Log("Error: cannot open input list file '{}'. Skipped.", inputPath.generic_string());
+            return;
+        }
+
+        string line;
+        while (std::getline(inputList, line)) {
+            // TODO: list file position based path?
+            if (line.empty()) {
+                continue;
+            }
+            process_input_file(logger, target_files, seen, line);
+        }
+
+        return;
+    }
+
+    if (seen.insert(inputPath).second) {
+        target_files.emplace_back(inputPath);
+    }
 }
