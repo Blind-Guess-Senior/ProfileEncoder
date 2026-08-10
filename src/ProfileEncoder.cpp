@@ -70,6 +70,9 @@ int main(const int argc, const char* argv[])
         collect_input_file(logger, targetFiles, seen, input);
     }
 
+    logger.Log("{} files found. Start encoding {}.", targetFiles.size(),
+               is_stat_disabled ? "without statistics" : "with statistics");
+
     // Process input files
     for (const auto& target : targetFiles) {
         process_input_file(logger, ffmpegRunner, target, profileRaw);

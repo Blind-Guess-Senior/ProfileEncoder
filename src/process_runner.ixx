@@ -85,14 +85,17 @@ export namespace process_runner
                 },
                 stdoutError);
             ReadLines(
-                stderrPipe, stderrBuffer,
-                [this, &currentSpeed, &finalSpeed](std::string_view line)
-                {
-                    m_logger.Log("ffmpeg: {}", line);
-                },
+                stderrPipe, stderrBuffer, [this](std::string_view line) { m_logger.Log("ffmpeg: {}", line); },
                 stderrError);
 
             ctx.run();
+            if (stdoutError) {
+                m_logger.Log("FFmpeg stdout read error: {}. Encoding probably failed.", stdoutError->message());
+            }
+
+            if (stderrError) {
+                m_logger.Log("FFmpeg stderr read error: {}. Encoding probably failed.", stderrError->message());
+            }
 
             const int exitCode = proc.wait();
             const auto elapsed = std::chrono::steady_clock::now() - start;
