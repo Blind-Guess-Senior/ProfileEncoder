@@ -113,3 +113,20 @@ set_target_properties(ProfileEncoder
 
 target_compile_features(ProfileEncoder PRIVATE cxx_std_23)
 
+install(TARGETS ProfileEncoder
+  RUNTIME_DEPENDENCIES
+    DIRECTORIES "${CMAKE_BINARY_DIR}"
+    PRE_EXCLUDE_REGEXES "api-ms-" "ext-ms-"
+    POST_EXCLUDE_REGEXES ".*[Ss]ystem32/.*"
+  RUNTIME DESTINATION ./bin
+)
+
+#install(TARGETS ProfileEncoder
+#  RUNTIME DESTINATION .
+#)
+
+#install(IMPORTED_RUNTIME_ARTIFACTS
+#    Boost::process
+#    Boost::filesystem
+#  RUNTIME DESTINATION ./lib
+#)

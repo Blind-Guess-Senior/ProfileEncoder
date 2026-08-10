@@ -19,7 +19,7 @@ static void configure_argument_parser(argparse::ArgumentParser& parser);
 static void collect_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
                                const string& input);
 static void process_input_file(Logger& logger, const process_runner::FFmpegRunner& ffmpeg_runner,
-                               const stdfs::path& input, const string& profile_raw);
+                               const stdfs::path& input_path, const string& profile_raw);
 
 static bool is_stat_disabled;
 
@@ -54,7 +54,7 @@ int main(const int argc, const char* argv[])
 
     // Log toggle info
     if (is_stat_disabled) {
-        logger.Log("Statistics disabled. No statistics info will be output.");
+        logger.Log("Statistics disabled.");
     }
     if (isLogDisabled) {
         logger.Log("Console log disabled.");
@@ -183,27 +183,43 @@ void collect_input_file(Logger& logger, vector<stdfs::path>& target_files, std::
     }
 }
 
-void process_input_file(Logger& logger, const process_runner::FFmpegRunner& ffmpeg_runner, const stdfs::path& input,
-                        const string& profile_raw)
+void process_input_file(Logger& logger, const process_runner::FFmpegRunner& ffmpeg_runner,
+                        const stdfs::path& input_path, const string& profile_raw)
 {
-    const auto outputPath =
-        input.parent_path() / (input.stem().generic_string() + "_" + profile_raw + input.extension().generic_string());
+    const auto outputPath = input_path.parent_path() /
+        (input_path.stem().generic_string() + "_" + profile_raw + input_path.extension().generic_string());
 
-    logger.Log("Started to encode {} in profile {}.", input.generic_string(), profile_raw);
-    try {
-        const auto [exitCode, elapsedRaw, speed] = ffmpeg_runner.RunFFmpeg(input, outputPath);
-        const auto elapsed = std::chrono::duration<double>(elapsedRaw).count();
-        if (exitCode == 0) {
-            logger.Log("Encoding {} successfully.", input.generic_string());
-            logger.Log("Encoding '{}' to '{}' completed in {} seconds. Speed: {}", input.generic_string(),
-                       outputPath.generic_string(), elapsed, speed ? std::to_string(*speed) : "N/A");
+    // Encode
+    logger.Log("Started to encode {} in profile {}.", input_path.generic_string(), profile_raw);
+
+    const auto runResult = ffmpeg_runner.RunEncode(input_path, outputPath);
+    if (!runResult) {
+        logger.Log("{}", runResult.error());
+        if (!is_stat_disabled) {
+            logger.Log("Statistics skipped.");
         }
-        else {
-            logger.Log("Failed to encode {}.", input.generic_string());
-        }
-    }
-    catch (const std::exception ex) {
-        logger.Log("Fatal error: FFmpeg process error when encoding file '{}': {}", input.generic_string(), ex.what());
         return;
     }
+    const auto [exitCode, elapsedRaw, speed] = runResult.value();
+
+    const auto elapsed = std::chrono::duration<double>(elapsedRaw).count();
+    if (exitCode == 0) {
+        logger.Log("Encoding {} successfully.", input_path.generic_string());
+        logger.Log("Encoding '{}' to '{}' completed in {} seconds. Speed: {}", input_path.generic_string(),
+                   outputPath.generic_string(), elapsed, speed ? std::to_string(*speed) : "N/A");
+    }
+    else {
+        logger.Log("Failed to encode '{}'.", input_path.generic_string());
+        if (!is_stat_disabled) {
+            logger.Log("Statistics skipped.");
+        }
+        return;
+    }
+
+    // Analyze
+    if (is_stat_disabled) {
+        return;
+    }
+
+    ffmpeg_runner.RunAnalyzes(outputPath, input_path);
 }
