@@ -14,17 +14,19 @@ namespace stdfs = std::filesystem;
 constexpr string_view LOG_FOLDER = "log";
 constexpr string_view PROFILE_FOLDER = "profiles";
 
-bool is_stat_disabled;
+static void configure_argument_parser(argparse::ArgumentParser& parser);
+[[nodiscard]] static vector<string> collect_profile_info(Logger& logger, const string& profile_raw);
+static void collect_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
+                               const string& input);
+static void process_input_file(Logger& logger, const process_runner::FFmpegRunner& ffmpeg_runner,
+                               const stdfs::path& input, const string& profile_raw);
 
-void configure_argument_parser(argparse::ArgumentParser& parser);
-[[nodiscard]] vector<string> collect_profile_info(Logger& logger, const string& profile_raw);
-void process_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
-                        const string& input);
+static bool is_stat_disabled;
 
-std::filesystem::path cwd;
-std::filesystem::path exe_path;
-std::filesystem::path profile_path;
-std::filesystem::path log_path;
+static std::filesystem::path cwd;
+static std::filesystem::path exe_path;
+static std::filesystem::path profile_path;
+static std::filesystem::path log_path;
 
 int main(const int argc, const char* argv[])
 {
@@ -41,13 +43,14 @@ int main(const int argc, const char* argv[])
     // auto y = argumentParser.get<bool>("-y");
     is_stat_disabled = argumentParser.get<bool>("--no-stat");
     const bool isLogDisabled = argumentParser.get<bool>("--no-log");
+    const bool isFFmpegLogDisabled = argumentParser.get<bool>("--no-ffmpeg-log");
 
     cwd = stdfs::current_path() / "";
     exe_path = normalized_path(argv[0]).parent_path(); // https://stackoverflow.com/a/55579815
     profile_path = exe_path / PROFILE_FOLDER / "";
     log_path = exe_path / LOG_FOLDER / "";
 
-    Logger logger{log_path, isLogDisabled};
+    Logger logger{log_path, isLogDisabled, isFFmpegLogDisabled};
 
     // Log toggle info
     if (is_stat_disabled) {
@@ -57,35 +60,19 @@ int main(const int argc, const char* argv[])
         logger.Log("Console log disabled.");
     }
 
-    vector<string> profileParams = collect_profile_info(logger, profileRaw);
+    process_runner::FFmpegRunner ffmpegRunner{logger, collect_profile_info(logger, profileRaw)};
 
-    // Process input files
+    // Collect input files
     vector<stdfs::path> targetFiles{};
     std::unordered_set<stdfs::path> seen{};
 
     for (const auto& input : inputs) {
-        process_input_file(logger, targetFiles, seen, input);
+        collect_input_file(logger, targetFiles, seen, input);
     }
 
+    // Process input files
     for (const auto& target : targetFiles) {
-        const auto outputPath = target.parent_path() /
-            (target.stem().generic_string() + "_" + profileRaw + target.extension().generic_string());
-
-        logger.Log("Started to encode {} in profile {}.", target.generic_string(), profileRaw);
-        try {
-            const int exitCode = process_runner::run_ffmpeg(target, profileParams, outputPath);
-            if (exitCode == 0) {
-                logger.Log("Encoding {} successfully.", target.generic_string());
-            }
-            else {
-                logger.Log("Failed to encode {}.", target.generic_string());
-            }
-        }
-        catch (const std::exception ex) {
-            logger.Log("Fatal error: FFmpeg process error when encoding file '{}': {}", target.generic_string(),
-                       ex.what());
-            continue;
-        }
+        process_input_file(logger, ffmpegRunner, target, profileRaw);
     }
 
     return 0;
@@ -104,8 +91,9 @@ void configure_argument_parser(argparse::ArgumentParser& parser)
         .help("Input files. Can be a single file or a txt that every single line refers to a file. Multiple input arg "
               "will be composed.");
     // parser.add_argument("-y").flag().help("Automatically replace output file.");
-    parser.add_argument("--no-stat").flag().help("Turn off statistics info.");
+    parser.add_argument("--no-stat").flag().help("Turn off statistics.");
     parser.add_argument("--no-log").flag().help("Turn off command line log output. File log will still preserved.");
+    parser.add_argument("--no-ffmpeg-log").flag().help("Turn off ffmpeg stderr output.");
 }
 
 vector<string> collect_profile_info(Logger& logger, const string& profile_raw)
@@ -155,7 +143,7 @@ vector<string> collect_profile_info(Logger& logger, const string& profile_raw)
     return profileParams;
 }
 
-void process_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
+void collect_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
                         const string& input)
 {
     std::filesystem::path inputPath = normalized_path(input);
@@ -181,7 +169,7 @@ void process_input_file(Logger& logger, vector<stdfs::path>& target_files, std::
             if (line.empty()) {
                 continue;
             }
-            process_input_file(logger, target_files, seen, line);
+            collect_input_file(logger, target_files, seen, line);
         }
 
         return;
@@ -189,5 +177,30 @@ void process_input_file(Logger& logger, vector<stdfs::path>& target_files, std::
 
     if (seen.insert(inputPath).second) {
         target_files.emplace_back(inputPath);
+    }
+}
+
+void process_input_file(Logger& logger, const process_runner::FFmpegRunner& ffmpeg_runner, const stdfs::path& input,
+                        const string& profile_raw)
+{
+    const auto outputPath =
+        input.parent_path() / (input.stem().generic_string() + "_" + profile_raw + input.extension().generic_string());
+
+    logger.Log("Started to encode {} in profile {}.", input.generic_string(), profile_raw);
+    try {
+        const auto [exitCode, elapsedRaw, speed] = ffmpeg_runner.RunFFmpeg(input, outputPath);
+        const auto elapsed = std::chrono::duration<double>(elapsedRaw).count();
+        if (exitCode == 0) {
+            logger.Log("Encoding {} successfully.", input.generic_string());
+            logger.Log("Encoding '{}' to '{}' completed in {} seconds. Speed: {}", input.generic_string(),
+                       outputPath.generic_string(), elapsed, speed ? std::to_string(*speed) : "N/A");
+        }
+        else {
+            logger.Log("Failed to encode {}.", input.generic_string());
+        }
+    }
+    catch (const std::exception ex) {
+        logger.Log("Fatal error: FFmpeg process error when encoding file '{}': {}", input.generic_string(), ex.what());
+        return;
     }
 }

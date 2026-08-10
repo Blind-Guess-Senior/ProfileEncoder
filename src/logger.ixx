@@ -5,8 +5,9 @@ import std;
 export class Logger
 {
 public:
-    explicit Logger(const std::filesystem::path& log_folder, const bool console_output_disabled = true) :
-        m_consoleOutputDisabled(console_output_disabled)
+    explicit Logger(const std::filesystem::path& log_folder, const bool console_output_disabled,
+                    const bool ffmpeg_output_disabled) :
+        m_consoleOutputDisabled(console_output_disabled), m_ffmpegOutputDisabled(ffmpeg_output_disabled)
     {
         const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
         const auto timePoint = std::chrono::current_zone()->to_local(now);
@@ -38,6 +39,10 @@ public:
 
     void Log(std::string_view log)
     {
+        constexpr std::string_view ffmpegPrefix = "ffmpeg:";
+        if (m_ffmpegOutputDisabled && log.starts_with(ffmpegPrefix)) {
+            return;
+        }
         const auto now = std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now());
         const auto timePoint = std::chrono::current_zone()->to_local(now);
         const auto timeString = "[" + std::format("{:%F %T}", timePoint) + "] ";
@@ -52,4 +57,5 @@ private:
     std::filesystem::path m_logFilePath;
     std::ofstream m_logFile;
     bool m_consoleOutputDisabled;
+    bool m_ffmpegOutputDisabled;
 };
