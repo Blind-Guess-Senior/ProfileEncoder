@@ -13,6 +13,7 @@ namespace stdfs = std::filesystem;
 
 constexpr string_view LOG_FOLDER = "log";
 constexpr string_view PROFILE_FOLDER = "profiles";
+constexpr string_view MATRIX_FOLDER = "statistics";
 
 static void configure_argument_parser(argparse::ArgumentParser& parser);
 [[nodiscard]] static vector<string> collect_profile_info(Logger& logger, const string& profile_raw);
@@ -23,10 +24,11 @@ static void process_input_file(Logger& logger, const process_runner::FFmpegRunne
 
 static bool is_stat_disabled;
 
-static std::filesystem::path cwd;
-static std::filesystem::path exe_path;
-static std::filesystem::path profile_path;
-static std::filesystem::path log_path;
+static stdfs::path cwd;
+static stdfs::path exe_path;
+static stdfs::path profile_path;
+static stdfs::path log_path;
+static stdfs::path matrix_path;
 
 int main(const int argc, const char* argv[])
 {
@@ -40,7 +42,7 @@ int main(const int argc, const char* argv[])
 
     const auto profileRaw = argumentParser.get<string>("--profile");
     auto inputs = argumentParser.get<vector<string>>("--input");
-    // auto y = argumentParser.get<bool>("-y");
+    const bool isMatrixEnabled = argumentParser.get<bool>("--matrix");
     is_stat_disabled = argumentParser.get<bool>("--no-stat");
     const bool isLogDisabled = argumentParser.get<bool>("--no-log");
     const bool isFFmpegLogDisabled = argumentParser.get<bool>("--no-ffmpeg-log");
@@ -49,8 +51,9 @@ int main(const int argc, const char* argv[])
     exe_path = normalized_path(argv[0]).parent_path(); // https://stackoverflow.com/a/55579815
     profile_path = exe_path / PROFILE_FOLDER / "";
     log_path = exe_path / LOG_FOLDER / "";
+    matrix_path = exe_path / MATRIX_FOLDER / "";
 
-    Logger logger{log_path, isLogDisabled, isFFmpegLogDisabled};
+    Logger logger{log_path, isLogDisabled, isFFmpegLogDisabled, isMatrixEnabled, matrix_path};
 
     // Log toggle info
     if (is_stat_disabled) {
@@ -60,7 +63,7 @@ int main(const int argc, const char* argv[])
         logger.Log("Console log disabled.");
     }
 
-    process_runner::FFmpegRunner ffmpegRunner{logger, collect_profile_info(logger, profileRaw)};
+    const process_runner::FFmpegRunner ffmpegRunner{logger, collect_profile_info(logger, profileRaw)};
 
     // Collect input files
     vector<stdfs::path> targetFiles{};
@@ -93,8 +96,9 @@ void configure_argument_parser(argparse::ArgumentParser& parser)
         .nargs(argparse::nargs_pattern::at_least_one)
         .help("Input files. Can be a single file or a txt that every single line refers to a file. Multiple input arg "
               "will be composed.");
-    // parser.add_argument("-y").flag().help("Automatically replace output file.");
-    parser.add_argument("--no-stat").flag().help("Turn off statistics.");
+    auto& statisticsGroup = parser.add_mutually_exclusive_group();
+    statisticsGroup.add_argument("--matrix").flag().help("Output markdown table style statistics data.");
+    statisticsGroup.add_argument("--no-stat").flag().help("Turn off statistics.");
     parser.add_argument("--no-log").flag().help("Turn off command line log output. File log will still preserved.");
     parser.add_argument("--no-ffmpeg-log").flag().help("Turn off ffmpeg stderr output.");
 }

@@ -97,6 +97,7 @@ target_sources(ProfileEncoder
   PRIVATE
     FILE_SET CXX_MODULES
     FILES
+      "src/statistics_result.ixx"
       "src/logger.ixx"
       "src/helpers.ixx"
       "src/process_runner.ixx"

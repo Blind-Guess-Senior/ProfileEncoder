@@ -14,6 +14,7 @@ module;
 
 export module process_runner;
 
+import statistics_result;
 import logger;
 
 namespace asio = boost::asio;
@@ -43,6 +44,31 @@ static std::optional<double> parse_speed(std::string_view speed)
     return value;
 }
 
+static std::optional<double> parse_analysis_value(std::string_view summary, std::string_view marker)
+{
+    const auto markerPosition = summary.find(marker);
+    if (markerPosition == std::string_view::npos) {
+        return std::nullopt;
+    }
+
+    auto valueRaw = summary.substr(markerPosition + marker.size());
+
+    const auto firstNonSpace = valueRaw.find_first_not_of(" \t");
+    if (firstNonSpace == std::string_view::npos) {
+        return std::nullopt;
+    }
+    valueRaw.remove_prefix(firstNonSpace);
+
+    double value;
+    const auto [ptr, ec] = std::from_chars(valueRaw.data(), valueRaw.data() + valueRaw.size(), value);
+
+    if (ec != std::errc{} || ptr == valueRaw.data()) {
+        return std::nullopt;
+    }
+
+    return value;
+}
+
 export namespace process_runner
 {
     struct ProcessResult
@@ -58,11 +84,20 @@ export namespace process_runner
         std::chrono::steady_clock::duration elapsed;
     };
 
+    enum class ANALYSIS_METRIC
+    {
+        PSNR,
+        SSIM,
+        VMAF,
+        XPSNR
+    };
     struct AnalysisSpec
     {
+        ANALYSIS_METRIC metric;
         std::string_view name;
         std::string_view filter;
         std::string_view summaryMarker;
+        std::string_view valueMarker;
     };
 
     class FFmpegRunner
@@ -148,11 +183,37 @@ export namespace process_runner
         void RunAnalyzes(const std::filesystem::path& encoded, const std::filesystem::path& origin) const
         {
             constexpr std::array analyses{
-                AnalysisSpec{"PSNR", "psnr", "PSNR y:"},
-                AnalysisSpec{"VMAF", "libvmaf", "VMAF score:"},
-                AnalysisSpec{"SSIM", "ssim", "SSIM Y:"},
-                AnalysisSpec{"XPSNR", "xpsnr", "XPSNR"},
+                AnalysisSpec{
+                    .metric = ANALYSIS_METRIC::PSNR,
+                    .name = "PSNR",
+                    .filter = "psnr",
+                    .summaryMarker = "PSNR y:",
+                    .valueMarker = "average:",
+                },
+                AnalysisSpec{
+                    .metric = ANALYSIS_METRIC::SSIM,
+                    .name = "SSIM",
+                    .filter = "ssim",
+                    .summaryMarker = "SSIM Y:",
+                    .valueMarker = "All:",
+                },
+                AnalysisSpec{
+                    .metric = ANALYSIS_METRIC::VMAF,
+                    .name = "VMAF",
+                    .filter = "libvmaf",
+                    .summaryMarker = "VMAF score:",
+                    .valueMarker = "VMAF score:",
+                },
+                AnalysisSpec{
+                    .metric = ANALYSIS_METRIC::XPSNR,
+                    .name = "XPSNR",
+                    .filter = "xpsnr",
+                    .summaryMarker = "XPSNR",
+                    .valueMarker = "minimum:",
+                },
             };
+
+            stat_result::statistics_values results{};
 
             for (const auto& analysis : analyses) {
                 m_logger.Log("Start {} analysis for '{}'.", analysis.name, encoded.generic_string());
@@ -164,9 +225,14 @@ export namespace process_runner
                     continue;
                 }
 
-                m_logger.Log("{} Analysis for '{}' succeed: {}", analysis.name, encoded.generic_string(),
-                             result.value());
+                const auto [summary, value] = result.value();
+
+                m_logger.Log("{} Analysis for '{}' succeed: {}", analysis.name, encoded.generic_string(), summary);
+
+                results.emplace(analysis.name, value);
             }
+
+            m_logger.Matrix(encoded, results);
         }
 
     private:
@@ -207,9 +273,9 @@ export namespace process_runner
                                    });
         }
 
-        [[nodiscard]] std::expected<std::string, std::string> RunAnalyze(const std::filesystem::path& encoded,
-                                                                         const std::filesystem::path& origin,
-                                                                         const AnalysisSpec& analysis) const
+        [[nodiscard]] std::expected<std::pair<std::string, double>, std::string>
+        RunAnalyze(const std::filesystem::path& encoded, const std::filesystem::path& origin,
+                   const AnalysisSpec& analysis) const
         {
             try {
                 asio::io_context ctx{};
@@ -247,7 +313,8 @@ export namespace process_runner
 
                         if (const auto markerPosition = line.find(analysis.summaryMarker);
                             markerPosition != std::string_view::npos) {
-                            summary = std::string{line.substr(markerPosition)};
+                            summary = line.substr(markerPosition);
+                            m_logger.Log("{} summary: {}", analysis.name, *summary);
                         }
                     },
                     stderrError);
@@ -269,7 +336,14 @@ export namespace process_runner
                     return std::unexpected("FFmpeg produced no analysis summary.");
                 }
 
-                return *summary;
+                const auto value = parse_analysis_value(*summary, analysis.valueMarker);
+                if (value) {
+                    std::pair p{*summary, *value};
+                    return p;
+                }
+                else {
+                    return std::unexpected(std::format("Failed to parse {} value from '{}'.", analysis.name, *summary));
+                }
             }
             catch (const std::exception& ex) {
                 return std::unexpected(ex.what());
