@@ -1,6 +1,7 @@
 ﻿
 import std;
 import argparse;
+import ftxui;
 import logger;
 import helpers;
 import process_runner;
@@ -16,17 +17,23 @@ constexpr string_view PROFILE_FOLDER = "profiles";
 constexpr string_view MATRIX_FOLDER = "statistics";
 
 static void configure_argument_parser(argparse::ArgumentParser& parser);
+
+[[nodiscard]] static vector<string> collect_profile_names(const stdfs::path& folder);
 [[nodiscard]] static vector<string> collect_profile_info(Logger& logger, const string& profile_raw);
+
 static void collect_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
                                const string& input);
 static void process_input_file(Logger& logger, const process_runner::FFmpegRunner& ffmpeg_runner,
                                const stdfs::path& input_path, const string& profile_raw);
 
+[[nodiscard]] static std::optional<string> profile_select_menu(Logger& logger, const stdfs::path& profiles_folder);
+[[nodiscard]] static std::optional<string> input_profile_name();
+
 static bool is_stat_disabled;
 
 static stdfs::path cwd;
 static stdfs::path exe_path;
-static stdfs::path profile_path;
+static stdfs::path profiles_path;
 static stdfs::path log_path;
 static stdfs::path matrix_path;
 
@@ -34,24 +41,26 @@ int main(const int argc, const char* argv[])
 {
     std::ios_base::sync_with_stdio(false);
 
+    cwd = stdfs::current_path() / "";
+    exe_path = normalized_path(argv[0]).parent_path(); // https://stackoverflow.com/a/55579815
+    profiles_path = exe_path / PROFILE_FOLDER / "";
+    log_path = exe_path / LOG_FOLDER / "";
+    matrix_path = exe_path / MATRIX_FOLDER / "";
+
     argparse::ArgumentParser argumentParser{"ProfileEncoder", "0.1.0"};
     configure_argument_parser(argumentParser);
 
+    // MSVC bug: if template unfold happens in argparse's "std", it would error.
     const vector<string> arguments(argv, argv + argc);
     argumentParser.parse_args(arguments);
 
-    const auto profileRaw = argumentParser.get<string>("--profile");
+    const auto isProfileInputted = argumentParser.is_used("--profile");
+    string profileRaw;
     auto inputs = argumentParser.get<vector<string>>("--input");
     const bool isMatrixEnabled = argumentParser.get<bool>("--matrix");
     is_stat_disabled = argumentParser.get<bool>("--no-stat");
     const bool isLogDisabled = argumentParser.get<bool>("--no-log");
     const bool isFFmpegLogDisabled = argumentParser.get<bool>("--no-ffmpeg-log");
-
-    cwd = stdfs::current_path() / "";
-    exe_path = normalized_path(argv[0]).parent_path(); // https://stackoverflow.com/a/55579815
-    profile_path = exe_path / PROFILE_FOLDER / "";
-    log_path = exe_path / LOG_FOLDER / "";
-    matrix_path = exe_path / MATRIX_FOLDER / "";
 
     Logger logger{log_path, isLogDisabled, isFFmpegLogDisabled, isMatrixEnabled, matrix_path};
 
@@ -61,6 +70,17 @@ int main(const int argc, const char* argv[])
     }
     if (isLogDisabled) {
         logger.Log("Console log disabled.");
+    }
+
+    if (isProfileInputted) {
+        profileRaw = argumentParser.get<string>("--profile");
+    }
+    else {
+        const auto selectedProfile = profile_select_menu(logger, profiles_path);
+        if (!selectedProfile) {
+            return 0;
+        }
+        profileRaw = *selectedProfile;
     }
 
     const process_runner::FFmpegRunner ffmpegRunner{logger, collect_profile_info(logger, profileRaw)};
@@ -87,9 +107,7 @@ int main(const int argc, const char* argv[])
 void configure_argument_parser(argparse::ArgumentParser& parser)
 {
     parser.add_description("Profile Encoder, a batch encoder for re-enc files in pre-defined profiles.");
-    parser.add_argument("-p", "--profile")
-        .default_value<string>("default")
-        .help("Choose one profile of encode. Profiles are under ./profiles folder.");
+    parser.add_argument("-p", "--profile").help("Choose one profile of encode. Profiles are under ./profiles folder.");
     parser.add_argument("-i", "--input")
         .append()
         .default_value<vector<string>>(vector<string>{"./input.txt"})
@@ -101,6 +119,24 @@ void configure_argument_parser(argparse::ArgumentParser& parser)
     statisticsGroup.add_argument("--no-stat").flag().help("Turn off statistics.");
     parser.add_argument("--no-log").flag().help("Turn off command line log output. File log will still preserved.");
     parser.add_argument("--no-ffmpeg-log").flag().help("Turn off ffmpeg stderr output.");
+}
+
+vector<string> collect_profile_names(const stdfs::path& folder)
+{
+    vector<string> profiles;
+
+    if (!stdfs::is_directory(folder)) {
+        return profiles;
+    }
+
+    for (const auto& entry : stdfs::directory_iterator(folder)) {
+        if (entry.is_regular_file() && is_txt(entry.path())) {
+            profiles.emplace_back(entry.path().stem().generic_string());
+        }
+    }
+
+    std::ranges::sort(profiles);
+    return profiles;
 }
 
 vector<string> collect_profile_info(Logger& logger, const string& profile_raw)
@@ -115,18 +151,18 @@ vector<string> collect_profile_info(Logger& logger, const string& profile_raw)
         targetProfileFile = cwd / stdfs::path{profile_raw.substr(1) + ".txt"};
     }
     else {
-        targetProfileFile = profile_path / stdfs::path{profile_raw + ".txt"};
+        targetProfileFile = profiles_path / stdfs::path{profile_raw + ".txt"};
     }
 
     if (!stdfs::exists(targetProfileFile)) {
         logger.Log("Error: Position {} does not contain given profile '{}'.",
-                   isLocalProfile ? cwd.generic_string() : profile_path.generic_string(),
+                   isLocalProfile ? cwd.generic_string() : profiles_path.generic_string(),
                    isLocalProfile ? profile_raw.substr(1) : profile_raw);
         throw std::runtime_error("Error: profile not found.");
     }
     if (!stdfs::is_regular_file(targetProfileFile)) {
         logger.Log("Profile '{}' in position {} is not a valid file.", profile_raw,
-                   isLocalProfile ? cwd.generic_string() : profile_path.generic_string());
+                   isLocalProfile ? cwd.generic_string() : profiles_path.generic_string());
         throw std::runtime_error("Error: profile not valid.");
     }
 
@@ -226,4 +262,82 @@ void process_input_file(Logger& logger, const process_runner::FFmpegRunner& ffmp
     }
 
     ffmpeg_runner.RunAnalyzes(outputPath, input_path);
+}
+
+std::optional<string> profile_select_menu(Logger& logger, const stdfs::path& profiles_folder)
+{
+    std::vector<std::string> entries = collect_profile_names(profiles_folder);
+    const auto manualInputIndex = entries.size();
+    entries.emplace_back("Enter profile name...");
+
+    int selected = 0;
+    bool cancelled = false;
+
+    auto screen = ftxui::ScreenInteractive::TerminalOutput();
+
+    ftxui::MenuOption options;
+    options.on_enter = screen.ExitLoopClosure();
+
+    const auto menu = ftxui::Menu(&entries, &selected, options);
+
+    const auto component = ftxui::CatchEvent(menu,
+                                             [&](const ftxui::Event event)
+                                             {
+                                                 if (event != ftxui::Event::Escape) {
+                                                     return false;
+                                                 }
+
+                                                 cancelled = true;
+                                                 screen.ExitLoopClosure()();
+                                                 return true;
+                                             });
+
+    screen.Loop(component);
+
+    if (cancelled) {
+        logger.Log("Cancelled. Program exited.");
+        return std::nullopt;
+    }
+
+    if (static_cast<std::size_t>(selected) == manualInputIndex) {
+        return input_profile_name();
+    }
+
+    logger.Log("Select profile {}", entries[selected]);
+
+    return entries[selected];
+}
+
+std::optional<string> input_profile_name()
+{
+    string profile;
+    bool cancelled = false;
+
+    auto screen = ftxui::ScreenInteractive::TerminalOutput();
+    auto input = ftxui::Input(&profile, "Profile name: ");
+
+    const auto component = ftxui::CatchEvent(input,
+                                             [&](const ftxui::Event event)
+                                             {
+                                                 if (event == ftxui::Event::Escape) {
+                                                     cancelled = true;
+                                                     screen.ExitLoopClosure()();
+                                                     return true;
+                                                 }
+
+                                                 if (event == ftxui::Event::Return && !profile.empty()) {
+                                                     screen.ExitLoopClosure()();
+                                                     return true;
+                                                 }
+
+                                                 return false;
+                                             });
+
+    screen.Loop(component);
+
+    if (cancelled) {
+        return std::nullopt;
+    }
+
+    return profile;
 }

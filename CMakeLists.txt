@@ -44,8 +44,11 @@ if(NOT 23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
 endif()
 
 # Packages
-# p-ranav/argpase
 include(FetchContent)
+# p-ranav/argpase
+# By the time of v3.2, argparse does not support directly fetch content as module. So we need to compile it's module.
+# This part is finished with help of GPT 5.6 - Sol.
+# Related infomation and reference: https://github.com/p-ranav/argparse/issues/429
 FetchContent_Declare(
   argparse
   GIT_REPOSITORY https://github.com/p-ranav/argparse.git
@@ -81,6 +84,23 @@ set_target_properties(profile_argparse_module PROPERTIES
   CXX_EXTENSIONS OFF
 )
 
+# FTXUI
+set(FTXUI_BUILD_MODULES ON CACHE BOOL "" FORCE)
+FetchContent_Declare(ftxui
+  GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI
+  GIT_TAG v7.0.3
+)
+FetchContent_MakeAvailable(ftxui)
+# forcely make ftxui module using c++23
+target_compile_features(ftxui-modules PUBLIC cxx_std_23)
+set_target_properties(ftxui-modules
+  PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    CXX_SCAN_FOR_MODULES ON
+)
+
 # Boost::process
 find_package(Boost 1.86 REQUIRED COMPONENTS process)
 
@@ -90,6 +110,7 @@ add_executable(ProfileEncoder "src/ProfileEncoder.cpp")
 target_link_libraries(ProfileEncoder
   PRIVATE
     profile_argparse_module
+    ftxui::modules
     Boost::process
 )
 
@@ -105,11 +126,11 @@ target_sources(ProfileEncoder
 
 set_target_properties(ProfileEncoder 
   PROPERTIES
-  CXX_STANDARD 23
-  CXX_STANDARD_REQUIRED ON
-  CXX_EXTENSIONS OFF
-  CXX_SCAN_FOR_MODULES ON
-  CXX_MODULE_STD ON
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    CXX_SCAN_FOR_MODULES ON
+    CXX_MODULE_STD ON
 )
 
 target_compile_features(ProfileEncoder PRIVATE cxx_std_23)
@@ -117,17 +138,7 @@ target_compile_features(ProfileEncoder PRIVATE cxx_std_23)
 install(TARGETS ProfileEncoder
   RUNTIME_DEPENDENCIES
     DIRECTORIES "${CMAKE_BINARY_DIR}"
-    PRE_EXCLUDE_REGEXES "api-ms-" "ext-ms-"
-    POST_EXCLUDE_REGEXES ".*[Ss]ystem32/.*"
+    PRE_EXCLUDE_REGEXES "api-ms-" "ext-ms-" # Exclude win32 lib 
+    POST_EXCLUDE_REGEXES ".*[Ss]ystem32/.*" # Exclude win32 lib
   RUNTIME DESTINATION ./bin
 )
-
-#install(TARGETS ProfileEncoder
-#  RUNTIME DESTINATION .
-#)
-
-#install(IMPORTED_RUNTIME_ARTIFACTS
-#    Boost::process
-#    Boost::filesystem
-#  RUNTIME DESTINATION ./lib
-#)
