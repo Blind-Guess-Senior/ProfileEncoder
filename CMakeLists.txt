@@ -140,5 +140,5 @@ install(TARGETS ProfileEncoder
     DIRECTORIES "${CMAKE_BINARY_DIR}"
     PRE_EXCLUDE_REGEXES "api-ms-" "ext-ms-" # Exclude win32 lib 
     POST_EXCLUDE_REGEXES ".*[Ss]ystem32/.*" # Exclude win32 lib
-  RUNTIME DESTINATION ./bin
+  RUNTIME DESTINATION .
 )
