@@ -22,7 +22,7 @@ constexpr string_view MATRIX_FOLDER = "statistics";
 static void configure_argument_parser(argparse::ArgumentParser& parser);
 
 [[nodiscard]] static vector<string> collect_profile_names(const stdfs::path& folder);
-[[nodiscard]] static vector<string> collect_profile_info(Logger& logger, const string& profile_raw);
+[[nodiscard]] static std::array<vector<string>, 3> collect_profile_info(Logger& logger, const string& profile_raw);
 
 static void collect_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
                                const string& input);
@@ -141,7 +141,7 @@ vector<string> collect_profile_names(const stdfs::path& folder)
     return profiles;
 }
 
-vector<string> collect_profile_info(Logger& logger, const string& profile_raw)
+std::array<vector<string>, 3> collect_profile_info(Logger& logger, const string& profile_raw)
 {
     // Process profile
     bool isLocalProfile = false;
@@ -175,10 +175,31 @@ vector<string> collect_profile_info(Logger& logger, const string& profile_raw)
         logger.Log("Fatal error: cannot open profile file '{}'", targetProfileFile.generic_string());
         throw std::runtime_error("Fatal error: cannot open profile file.");
     }
-    vector<string> profileParams{};
+    std::array<vector<string>, 3> profileParams;
     string param;
-    while (profileFile >> param) {
-        profileParams.push_back(param);
+    std::size_t currentPosition = 1;
+    while (std::getline(profileFile, param)) {
+        if (param.ends_with('\r')) {
+            param.pop_back();
+        } // If a file in Linux use crlf, it may cause problem.
+        if (param == "#1") {
+            currentPosition = 0;
+        }
+        else if (param == "#2") {
+            currentPosition = 1;
+        }
+        else if (param == "#3") {
+            currentPosition = 2;
+        }
+        else if (param.empty()) {
+            continue;
+        }
+        else if (param.find_first_not_of(" \t\r") == string::npos) {
+            continue;
+        }
+        else {
+            profileParams[currentPosition].push_back(std::move(param));
+        }
     }
 
     logger.Log("Encoding with profile params {}", profileParams);

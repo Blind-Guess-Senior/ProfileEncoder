@@ -103,7 +103,7 @@ export namespace process_runner
     class FFmpegRunner
     {
     public:
-        explicit FFmpegRunner(Logger& logger, std::vector<std::string>&& params) :
+        explicit FFmpegRunner(Logger& logger, std::array<std::vector<std::string>, 3>&& params) :
             m_ffmpeg(bp::environment::find_executable("ffmpeg")), m_logger(logger), m_params(std::move(params))
         {
             if (m_ffmpeg.empty()) {
@@ -115,11 +115,17 @@ export namespace process_runner
                                                                           const std::filesystem::path& output) const
         {
             std::vector<std::string> arguments{
-                "-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-i", input.generic_string(),
+                "-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
             };
 
-            arguments.insert_range(arguments.end(), m_params);
-            arguments.emplace_back(output.generic_string());
+            arguments.append_range(m_params[0]);
+            arguments.emplace_back("-i");
+            arguments.push_back(input.generic_string());
+
+            arguments.append_range(m_params[1]);
+            arguments.push_back(output.generic_string());
+
+            arguments.append_range(m_params[2]);
             arguments.emplace_back("-y");
 
             try {
@@ -235,7 +241,7 @@ export namespace process_runner
     private:
         const boost::filesystem::path m_ffmpeg;
         Logger& m_logger;
-        const std::vector<std::string> m_params;
+        const std::array<std::vector<std::string>, 3> m_params;
 
         using read_line_handler = std::function<void(std::string_view)>;
         static void ReadLines(asio::readable_pipe& pipe, std::string& buffer, read_line_handler handler,

@@ -62,4 +62,42 @@ ProfileEncoder --profile default --input video.mkv --matrix
 | `--no-log` | 禁用控制台日志输出，文件日志仍会保留。 |
 | `--no-ffmpeg-log` | 不在日志中记录编码阶段的 FFmpeg stderr 内容。 |
 
-编码结果保存在源文件旁，文件名格式为 `<源文件名>_<配置名>.<源扩展名>`。普通日志保存在程序旁的 `logs` 文件夹，Markdown 统计结果保存在 `statistics` 文件夹。压缩比按编码后文件大小除以源文件大小计算。
+### Profile 语法
+
+Profile 是一个文本文件，每行包含一个完整的 FFmpeg 参数。空行及仅含空白字符的行会被忽略。可选的标记行 `#1`、`#2` 和 `#3` 用于指定后续参数的位置：
+
+```text
+#1
+-hwaccel
+cuda
+#2
+-c:v
+hevc_nvenc
+-preset
+p7
+-profile:v
+main10
+-tune
+hq
+-rc
+constqp
+-cq
+19
+-multipass
+fullres
+-spatial_aq
+1
+-c:a
+copy
+#3
+-y
+```
+
+例如，上面的 profile 将会被传递给 ffmpeg 这样的参数：
+`-hwaccel cuda -i 这里是输入文件 -c:v hevc_nvenc -preset p7 -profile:v main10 -tune hq -rc constqp -cq 19 -multipass fullres -spatial_aq 1 -c:a copy 这里是输出文件 -y`
+
+无标记情况会被认为 `#2` 位置。
+
+### 输出
+
+编码结果保存在源文件旁，命名为 `<源文件名>_<配置名>.<源扩展名>`。普通日志保存于 `logs` 文件夹，统计结果保存于 `statistics` 文件夹。
