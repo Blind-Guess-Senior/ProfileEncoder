@@ -9,7 +9,7 @@ ProfileEncoder 是一个基于预设配置的 FFmpeg 批量编码前端。它可
 ## 环境要求
 
 - 支持 `C++23`、`C++` Modules 和 `import std` 的编译器
-- CMake 3.30 或更高版本
+- CMake 3.30.0 - 4.4.2
 - Ninja
 - vcpkg，并已配置 `VCPKG_ROOT`
 - 运行时可从 `PATH` 找到 FFmpeg
@@ -55,11 +55,11 @@ ProfileEncoder --profile default --input video.mkv --matrix
 
 | 参数 | 说明 |
 | --- | --- |
-| `-p`, `--profile <名称>` | 选择编码配置，默认为 `default`。普通配置从程序所在目录下的 `profiles` 文件夹读取；以 `.` 开头的名称表示从当前工作目录读取配置。 |
+| `-p`, `--profile <名称>` | 选择编码配置。未传入此参数时，将启动 TUI 以选择配置。普通配置从程序所在目录下的 `profiles` 文件夹读取；以 `.` 开头的名称表示从当前工作目录读取配置。 |
 | `-i`, `--input <文件...>` | 添加输入文件。输入可以是媒体文件，也可以是每行包含一个路径的文本文件。多个值及重复出现的 `--input` 参数会被合并。默认值为 `./input.txt`。 |
-| `--matrix` | 将 PSNR、SSIM、VMAF 和 XPSNR 结果写为 Markdown 表格。不能与 `--no-stat` 同时使用。 |
-| `--no-stat` | 跳过所有质量分析。 |
+| `--matrix` | 将编码速度、压缩比和质量分析结果写为 Markdown 表格。与 `--no-stat` 同时使用时，仅写入编码速度和压缩比。 |
+| `--no-stat` | 跳过 PSNR、SSIM、VMAF 和 XPSNR 质量分析。 |
 | `--no-log` | 禁用控制台日志输出，文件日志仍会保留。 |
 | `--no-ffmpeg-log` | 不在日志中记录编码阶段的 FFmpeg stderr 内容。 |
 
-编码结果保存在源文件旁，文件名格式为 `<源文件名>_<配置名>.<扩展名>`。普通日志保存在程序旁的 `log` 文件夹，Markdown 统计结果保存在 `statistics` 文件夹。
+编码结果保存在源文件旁，文件名格式为 `<源文件名>_<配置名>.<源扩展名>`。普通日志保存在程序旁的 `logs` 文件夹，Markdown 统计结果保存在 `statistics` 文件夹。压缩比按编码后文件大小除以源文件大小计算。

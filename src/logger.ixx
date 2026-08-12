@@ -7,10 +7,10 @@ export class Logger
 {
 public:
     explicit Logger(const std::filesystem::path& log_folder, const bool console_output_disabled,
-                    const bool ffmpeg_output_disabled, const bool matrix_enabled = false,
-                    const std::filesystem::path& matrix_folder = {}) :
+                    const bool ffmpeg_output_disabled, const bool stat_disabled = false,
+                    const bool matrix_enabled = false, const std::filesystem::path& matrix_folder = {}) :
         m_consoleOutputDisabled(console_output_disabled), m_ffmpegOutputDisabled(ffmpeg_output_disabled),
-        m_matrixEnabled(matrix_enabled)
+        m_statisticsDisabled(stat_disabled), m_matrixEnabled(matrix_enabled)
     {
         const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
         const auto timePoint = std::chrono::current_zone()->to_local(now);
@@ -53,7 +53,14 @@ public:
             std::cerr << "Fatal error: cannot open statistics file.\n";
             throw std::runtime_error("Failed to open statistics file.");
         }
-        m_matrixFile << "|     | PSNR | SSIM | VMAF | XPSNR |\n" << "| --- | ---- | ---- | ---- | ----- |\n";
+        if (m_statisticsDisabled) {
+            m_matrixFile << "|     | speed | compress rate |\n"
+                         << "| --- | ----- | ------------- |\n";
+        }
+        else {
+            m_matrixFile << "|     | speed | compress rate | PSNR | SSIM | VMAF | XPSNR |\n"
+                         << "| --- | ----- | ------------- | ---- | ---- | ---- | ----- |\n";
+        }
     }
 
     template <typename... Args>
@@ -84,19 +91,33 @@ public:
             return;
         }
 
-        constexpr std::array keys{"PSNR", "SSIM", "VMAF", "XPSNR"};
+        constexpr std::array infoKeys{"speed", "compression_ratio"};
+        constexpr std::array statKeys{"PSNR", "SSIM", "VMAF", "XPSNR"};
 
         m_matrixFile << "| " << target_file.generic_string();
 
-        for (size_t i = 0; i < keys.size(); ++i) {
+        for (const auto& k : infoKeys) {
             m_matrixFile << " | ";
-            const auto& iterator = values.find(keys[i]);
+            const auto& iterator = values.find(k);
             if (iterator != values.end() && iterator->second)
                 m_matrixFile << *iterator->second;
             else {
                 m_matrixFile << "N/A";
             }
         }
+        if (m_statisticsDisabled) {
+            goto end;
+        }
+        for (const auto& k : statKeys) {
+            m_matrixFile << " | ";
+            const auto& iterator = values.find(k);
+            if (iterator != values.end() && iterator->second)
+                m_matrixFile << *iterator->second;
+            else {
+                m_matrixFile << "N/A";
+            }
+        }
+    end:
         m_matrixFile << " |\n";
     }
 
@@ -105,6 +126,8 @@ private:
     std::ofstream m_logFile;
     const bool m_consoleOutputDisabled;
     const bool m_ffmpegOutputDisabled;
+
+    const bool m_statisticsDisabled;
 
     std::filesystem::path m_matrixFilePath;
     std::ofstream m_matrixFile;

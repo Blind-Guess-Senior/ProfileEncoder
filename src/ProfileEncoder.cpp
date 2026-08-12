@@ -1,7 +1,10 @@
 ﻿
 import std;
+
 import argparse;
 import ftxui;
+
+import statistics_result;
 import logger;
 import helpers;
 import process_runner;
@@ -12,7 +15,7 @@ using std::vector;
 
 namespace stdfs = std::filesystem;
 
-constexpr string_view LOG_FOLDER = "log";
+constexpr string_view LOG_FOLDER = "logs";
 constexpr string_view PROFILE_FOLDER = "profiles";
 constexpr string_view MATRIX_FOLDER = "statistics";
 
@@ -62,7 +65,7 @@ int main(const int argc, const char* argv[])
     const bool isLogDisabled = argumentParser.get<bool>("--no-log");
     const bool isFFmpegLogDisabled = argumentParser.get<bool>("--no-ffmpeg-log");
 
-    Logger logger{log_path, isLogDisabled, isFFmpegLogDisabled, isMatrixEnabled, matrix_path};
+    Logger logger{log_path, isLogDisabled, isFFmpegLogDisabled, is_stat_disabled, isMatrixEnabled, matrix_path};
 
     // Log toggle info
     if (is_stat_disabled) {
@@ -114,9 +117,8 @@ void configure_argument_parser(argparse::ArgumentParser& parser)
         .nargs(argparse::nargs_pattern::at_least_one)
         .help("Input files. Can be a single file or a txt that every single line refers to a file. Multiple input arg "
               "will be composed.");
-    auto& statisticsGroup = parser.add_mutually_exclusive_group();
-    statisticsGroup.add_argument("--matrix").flag().help("Output markdown table style statistics data.");
-    statisticsGroup.add_argument("--no-stat").flag().help("Turn off statistics.");
+    parser.add_argument("--matrix").flag().help("Output markdown table style statistics data.");
+    parser.add_argument("--no-stat").flag().help("Turn off video quality statistics.");
     parser.add_argument("--no-log").flag().help("Turn off command line log output. File log will still preserved.");
     parser.add_argument("--no-ffmpeg-log").flag().help("Turn off ffmpeg stderr output.");
 }
@@ -226,6 +228,8 @@ void collect_input_file(Logger& logger, vector<stdfs::path>& target_files, std::
 void process_input_file(Logger& logger, const process_runner::FFmpegRunner& ffmpeg_runner,
                         const stdfs::path& input_path, const string& profile_raw)
 {
+    stat_result::statistics_values results;
+
     const auto outputPath = input_path.parent_path() /
         (input_path.stem().generic_string() + "_" + profile_raw + input_path.extension().generic_string());
 
@@ -255,13 +259,28 @@ void process_input_file(Logger& logger, const process_runner::FFmpegRunner& ffmp
         }
         return;
     }
+    // Store result
+    results["speed"] = speed;
+    // Calculate compress rate
+    std::error_code inputError;
+    std::error_code outputError;
 
-    // Analyze
-    if (is_stat_disabled) {
-        return;
+    const auto inputSize = std::filesystem::file_size(input_path, inputError);
+    const auto outputSize = std::filesystem::file_size(outputPath, outputError);
+
+    if (!inputError && !outputError && inputSize != 0) {
+        results["compression_ratio"] = static_cast<double>(outputSize) / static_cast<double>(inputSize);
+    }
+    else {
+        results["compression_ratio"] = std::nullopt;
     }
 
-    ffmpeg_runner.RunAnalyzes(outputPath, input_path);
+    // Analyze
+    if (!is_stat_disabled) {
+        ffmpeg_runner.RunAnalyzes(outputPath, input_path, results);
+    }
+
+    logger.Matrix(outputPath, results);
 }
 
 std::optional<string> profile_select_menu(Logger& logger, const stdfs::path& profiles_folder)

@@ -180,7 +180,8 @@ export namespace process_runner
             }
         }
 
-        void RunAnalyzes(const std::filesystem::path& encoded, const std::filesystem::path& origin) const
+        void RunAnalyzes(const std::filesystem::path& encoded, const std::filesystem::path& origin,
+                         stat_result::statistics_values& results) const
         {
             constexpr std::array analyses{
                 AnalysisSpec{
@@ -213,8 +214,6 @@ export namespace process_runner
                 },
             };
 
-            stat_result::statistics_values results{};
-
             for (const auto& analysis : analyses) {
                 m_logger.Log("Start {} analysis for '{}'.", analysis.name, encoded.generic_string());
                 const auto result = RunAnalyze(encoded, origin, analysis);
@@ -231,8 +230,6 @@ export namespace process_runner
 
                 results.emplace(analysis.name, value);
             }
-
-            m_logger.Matrix(encoded, results);
         }
 
     private:
