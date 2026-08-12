@@ -25,7 +25,10 @@ static void configure_argument_parser(argparse::ArgumentParser& parser);
 [[nodiscard]] static std::array<vector<string>, 3> collect_profile_info(Logger& logger, const string& profile_raw);
 
 static void collect_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
-                               const string& input);
+                               const string& input, const stdfs::path& base_directory, bool enable_glob = true);
+static void collect_concrete_input_file(Logger& logger, vector<stdfs::path>& target_files,
+                                        std::unordered_set<stdfs::path>& seen, const stdfs::path& input_path);
+
 static void process_input_file(Logger& logger, const process_runner::FFmpegRunner& ffmpeg_runner,
                                const stdfs::path& input_path, const string& profile_raw);
 
@@ -93,7 +96,7 @@ int main(const int argc, const char* argv[])
     std::unordered_set<stdfs::path> seen{};
 
     for (const auto& input : inputs) {
-        collect_input_file(logger, targetFiles, seen, input);
+        collect_input_file(logger, targetFiles, seen, input, cwd);
     }
 
     logger.Log("{} files found. Start encoding {}.", targetFiles.size(),
@@ -210,39 +213,79 @@ std::array<vector<string>, 3> collect_profile_info(Logger& logger, const string&
 }
 
 void collect_input_file(Logger& logger, vector<stdfs::path>& target_files, std::unordered_set<stdfs::path>& seen,
-                        const string& input)
+                        const string& input, const stdfs::path& base_directory, const bool enable_glob)
 {
-    std::filesystem::path inputPath = normalized_path(input);
+    std::filesystem::path inputPath{input};
+
+    if (inputPath.is_relative()) {
+        inputPath = base_directory / inputPath;
+    }
+
+    if (enable_glob && contains_glob_pattern(inputPath)) {
+        const auto matches = expand_glob(inputPath);
+
+        if (matches.empty()) {
+            logger.Log("Input pattern {} matched no files. Skipped.", inputPath.generic_string());
+            return;
+        }
+
+        for (const auto& match : matches) {
+            collect_concrete_input_file(logger, target_files, seen, match);
+        }
+        return;
+    }
+
+    collect_concrete_input_file(logger, target_files, seen, normalized_path(inputPath.generic_string()));
+}
+
+void collect_concrete_input_file(Logger& logger, vector<stdfs::path>& target_files,
+                                 std::unordered_set<stdfs::path>& seen, const stdfs::path& input_path)
+{
+    const auto inputPath = normalized_path(input_path.generic_string());
+
     if (!stdfs::exists(inputPath)) {
         logger.Log("Error: input file {} does not exist. Skipped.", inputPath.generic_string());
         return;
     }
+
     if (!stdfs::is_regular_file(inputPath)) {
         logger.Log("Error: input file {} is not valid. Skipped.", inputPath.generic_string());
         return;
     }
-    if (is_txt(inputPath)) {
-        std::ifstream inputList{inputPath};
 
-        if (!inputList.is_open()) {
-            logger.Log("Error: cannot open input list file '{}'. Skipped.", inputPath.generic_string());
-            return;
-        }
-
-        string line;
-        while (std::getline(inputList, line)) {
-            // TODO: list file position based path?
-            if (line.empty()) {
-                continue;
-            }
-            collect_input_file(logger, target_files, seen, line);
-        }
-
+    // Deduplicate before txt check
+    if (!seen.insert(inputPath).second) {
         return;
     }
 
-    if (seen.insert(inputPath).second) {
-        target_files.emplace_back(inputPath);
+    if (!is_txt(inputPath)) {
+        target_files.push_back(inputPath);
+        return;
+    }
+
+    std::ifstream inputList{inputPath};
+
+    if (!inputList.is_open()) {
+        logger.Log("Error: cannot open input list file '{}'. Skipped.", inputPath.generic_string());
+        return;
+    }
+
+    bool enableGlob = true;
+    string line;
+    while (std::getline(inputList, line)) {
+        if (line.ends_with('\r')) {
+            line.pop_back();
+        }
+
+        if (line.empty()) {
+            continue;
+        }
+        if (line == "#noglob") {
+            enableGlob = false;
+            continue;
+        }
+
+        collect_input_file(logger, target_files, seen, line, inputPath.parent_path(), enableGlob);
     }
 }
 

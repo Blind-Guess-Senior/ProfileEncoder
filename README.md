@@ -56,13 +56,21 @@ ProfileEncoder --profile default --input video.mkv --matrix
 | Option | Description |
 | --- | --- |
 | `-p`, `--profile <name>` | Select an encoding profile. When omitted, a TUI is opened for profile selection. Normal profiles are read from the `profiles` directory next to the executable. A name beginning with `.` selects a profile from the current working directory. |
-| `-i`, `--input <files...>` | Add input files. An input may be a media file or a text file containing one path per line. Multiple values and repeated `--input` options are combined. The default is `./input.txt`. |
+| `-i`, `--input <files...>` | Add input files. A `txt` file is treated as a list with one input per line. Repeated `--input` options are combined. The default is `./input.txt` relative to the current working directory. |
 | `--matrix` | Write encoding speed, compression ratio, and quality analysis results as a Markdown table. When used with `--no-stat`, only encoding speed and compression ratio are written. |
 | `--no-stat` | Skip PSNR, SSIM, VMAF, and XPSNR quality analyses. |
 | `--no-log` | Disable console log output. File logging remains enabled. |
 | `--no-ffmpeg-log` | Suppress encoding-stage FFmpeg stderr lines from the log. |
 
-### Profile syntax
+### Input
+
+Relative paths in a list file are resolved relative to that file. Command-line inputs and list entries support wildcard syntax through [p-ranav/glob: Glob for C++17](https://github.com/p-ranav/glob).
+
+List files are parsed recursively.
+
+Write `#noglob` to disable wildcard expansion for entries directly belonging to the current list.
+
+### Profile
 
 A profile is a text file containing one complete FFmpeg argument per line. Empty and whitespace-only lines are ignored. The optional marker lines `#1`, `#2`, and `#3` select where the following arguments are placed:
 
@@ -101,3 +109,13 @@ If no markers are present, all arguments use position `#2`.
 ### Output
 
 Encoded files are written next to their source files using the name `<source>_<profile>.<source_extension>`. Regular logs are stored in the `logs` folder, and statistics are stored in the `statistics` folder, both next to the executable.
+
+## References
+
+[p-ranav/argparse: Argument Parser for Modern C++](https://github.com/p-ranav/argparse)
+
+[boostorg/process: Boost Process](https://github.com/boostorg/process)
+
+[ArthurSonzogni/FTXUI: C++ Functional Terminal User Interface](https://github.com/ArthurSonzogni/FTXUI)
+
+[p-ranav/glob: Glob for C++17](https://github.com/p-ranav/glob)

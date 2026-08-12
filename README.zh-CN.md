@@ -56,13 +56,21 @@ ProfileEncoder --profile default --input video.mkv --matrix
 | 参数 | 说明 |
 | --- | --- |
 | `-p`, `--profile <名称>` | 选择编码配置。未传入此参数时，将启动 TUI 以选择配置。普通配置从程序所在目录下的 `profiles` 文件夹读取；以 `.` 开头的名称表示从当前工作目录读取配置。 |
-| `-i`, `--input <文件...>` | 添加输入文件。输入可以是媒体文件，也可以是每行包含一个路径的文本文件。多个值及重复出现的 `--input` 参数会被合并。默认值为 `./input.txt`。 |
+| `-i`, `--input <文件...>` | 添加输入文件。`txt` 格式的文件将被视为每行为一个输入的列表。重复的 `--input` 参数将被合并。默认值为 `./input.txt` （基于当前工作目录）。 |
 | `--matrix` | 将编码速度、压缩比和质量分析结果写为 Markdown 表格。与 `--no-stat` 同时使用时，仅写入编码速度和压缩比。 |
 | `--no-stat` | 跳过 PSNR、SSIM、VMAF 和 XPSNR 质量分析。 |
 | `--no-log` | 禁用控制台日志输出，文件日志仍会保留。 |
 | `--no-ffmpeg-log` | 不在日志中记录编码阶段的 FFmpeg stderr 内容。 |
 
-### Profile 语法
+### 输入
+
+列表文件中的相对路径将相对于该文件解析。命令行输入和列表内容支持通配语法，实现基于 [p-ranav/glob: Glob for C\+\+17](https://github.com/p-ranav/glob)。
+
+列表文件会被递归解析。
+
+写入 `#noglob` 以禁用语法展开，仅限直属于当前列表的条目。
+
+### Profile
 
 Profile 是一个文本文件，每行包含一个完整的 FFmpeg 参数。空行及仅含空白字符的行会被忽略。可选的标记行 `#1`、`#2` 和 `#3` 用于指定后续参数的位置：
 
@@ -101,3 +109,13 @@ copy
 ### 输出
 
 编码结果保存在源文件旁，命名为 `<源文件名>_<配置名>.<源扩展名>`。普通日志保存于 `logs` 文件夹，统计结果保存于 `statistics` 文件夹。
+
+## References
+
+[p-ranav/argparse: Argument Parser for Modern C++](https://github.com/p-ranav/argparse)
+
+[boostorg/process: Boost Process](https://github.com/boostorg/process)
+
+[ArthurSonzogni/FTXUI: :computer: C++ Functional Terminal User Interface. :heart:](https://github.com/ArthurSonzogni/FTXUI)
+
+[p-ranav/glob: Glob for C++17](https://github.com/p-ranav/glob)

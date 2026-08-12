@@ -114,6 +114,12 @@ target_link_libraries(ProfileEncoder
     Boost::process
 )
 
+# p-ranav/glob
+target_include_directories(ProfileEncoder
+  PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/lib"
+)
+
 target_sources(ProfileEncoder
   PRIVATE
     FILE_SET CXX_MODULES
