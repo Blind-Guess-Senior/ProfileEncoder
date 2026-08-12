@@ -72,31 +72,19 @@ Write `#noglob` to disable wildcard expansion for entries directly belonging to 
 
 ### Profile
 
-A profile is a text file containing one complete FFmpeg argument per line. Empty and whitespace-only lines are ignored. The optional marker lines `#1`, `#2`, and `#3` select where the following arguments are placed:
+A profile is a text file containing FFmpeg arguments. By default, arguments are separated by whitespace, so related options may be written on the same line. The markers `#1`, `#2`, and `#3` select where the following arguments are placed:
 
 ```text
 #1
--hwaccel
-cuda
+-hwaccel cuda
 #2
--c:v
-hevc_nvenc
--preset
-p7
--profile:v
-main10
--tune
-hq
--rc
-constqp
--cq
-19
--multipass
-fullres
--spatial_aq
-1
--c:a
-copy
+-c:v hevc_nvenc -preset p7
+-profile:v main10
+-tune hq
+-rc constqp -cq
+19 -multipass fullres
+-spatial_aq 1
+-c:a copy
 #3
 -y
 ```
@@ -105,6 +93,17 @@ For example, the profile above is passed to FFmpeg as arguments like this:
 `-hwaccel cuda -i <input file> -c:v hevc_nvenc -preset p7 -profile:v main10 -tune hq -rc constqp -cq 19 -multipass fullres -spatial_aq 1 -c:a copy <output file> -y`
 
 If no markers are present, all arguments use position `#2`.
+
+Use `#line` when an argument contains spaces and should be read as a complete line. Use `#word` to switch back to whitespace-separated arguments.
+
+```text
+#2
+-metadata
+#line
+title=My encoded video
+#word
+-c:a copy
+```
 
 ### Output
 

@@ -181,10 +181,39 @@ std::array<vector<string>, 3> collect_profile_info(Logger& logger, const string&
     std::array<vector<string>, 3> profileParams;
     string param;
     std::size_t currentPosition = 1;
-    while (std::getline(profileFile, param)) {
-        if (param.ends_with('\r')) {
-            param.pop_back();
-        } // If a file in Linux use crlf, it may cause problem.
+    enum class READ_MODE
+    {
+        Line,
+        Word,
+    };
+    auto mode = READ_MODE::Word;
+
+    while (true) {
+        switch (mode) {
+        case READ_MODE::Line:
+            {
+                if (!std::getline(profileFile, param)) {
+                    goto ReadParamEnd;
+                }
+
+                if (param.ends_with('\r')) {
+                    param.pop_back();
+                } // If a file in Linux use crlf, it may cause problem.
+
+                if (param.empty() || param.find_first_not_of(" \t\r") == string::npos) {
+                    continue;
+                }
+                break;
+            }
+        case READ_MODE::Word:
+            {
+                if (!(profileFile >> param)) {
+                    goto ReadParamEnd;
+                }
+                break;
+            }
+        }
+
         if (param == "#1") {
             currentPosition = 0;
         }
@@ -194,20 +223,22 @@ std::array<vector<string>, 3> collect_profile_info(Logger& logger, const string&
         else if (param == "#3") {
             currentPosition = 2;
         }
-        else if (param.empty()) {
-            continue;
+        else if (param == "#line") {
+            mode = READ_MODE::Line;
         }
-        else if (param.find_first_not_of(" \t\r") == string::npos) {
-            continue;
+        else if (param == "#word") {
+            mode = READ_MODE::Word;
         }
         else {
             profileParams[currentPosition].push_back(std::move(param));
         }
     }
 
+ReadParamEnd:
+
     logger.Log("Encoding with profile params {}", profileParams);
 
-    profileFile.close();
+    //profileFile.close(); // Dtor will automatically close.
 
     return profileParams;
 }

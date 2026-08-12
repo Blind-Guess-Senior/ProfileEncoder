@@ -72,31 +72,19 @@ ProfileEncoder --profile default --input video.mkv --matrix
 
 ### Profile
 
-Profile 是一个文本文件，每行包含一个完整的 FFmpeg 参数。空行及仅含空白字符的行会被忽略。可选的标记行 `#1`、`#2` 和 `#3` 用于指定后续参数的位置：
+Profile 是一个包含 FFmpeg 参数的文本文件。默认情况下，参数按空白字符分隔，因此相关的选项可以写在同一行。标记 `#1`、`#2` 和 `#3` 用于指定后续参数的位置：
 
 ```text
 #1
--hwaccel
-cuda
+-hwaccel cuda
 #2
--c:v
-hevc_nvenc
--preset
-p7
--profile:v
-main10
--tune
-hq
--rc
-constqp
--cq
-19
--multipass
-fullres
--spatial_aq
-1
--c:a
-copy
+-c:v hevc_nvenc -preset p7
+-profile:v main10
+-tune hq
+-rc constqp -cq
+19 -multipass fullres
+-spatial_aq 1
+-c:a copy
 #3
 -y
 ```
@@ -105,6 +93,17 @@ copy
 `-hwaccel cuda -i 这里是输入文件 -c:v hevc_nvenc -preset p7 -profile:v main10 -tune hq -rc constqp -cq 19 -multipass fullres -spatial_aq 1 -c:a copy 这里是输出文件 -y`
 
 无标记情况会被认为 `#2` 位置。
+
+当某个参数包含空格、需要将整行作为一个参数读取时，可以使用 `#line`；使用 `#word` 可切换回按空白字符分隔参数。
+
+```text
+#2
+-metadata
+#line
+title=My encoded video
+#word
+-c:a copy
+```
 
 ### 输出
 
