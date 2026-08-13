@@ -1,12 +1,13 @@
 module;
 
-#include <charconv>
-#include <chrono>
-#include <expected>
-#include <filesystem>
-#include <stdexcept>
-#include <string>
-#include <vector>
+// If your build got error, try comment import std; and uncomment those traditional include.
+// #include <charconv>
+// #include <chrono>
+// #include <expected>
+// #include <filesystem>
+// #include <stdexcept>
+// #include <string>
+// #include <vector>
 
 #include "boost/asio.hpp"
 #include "boost/process/v2/environment.hpp"
@@ -15,6 +16,7 @@ module;
 
 export module process_runner;
 
+import std;
 import statistics_result;
 import logger;
 
