@@ -57,6 +57,9 @@ ProfileEncoder --profile default --input video.mkv --matrix
 | --- | --- |
 | `-p`, `--profile <name>` | Select an encoding profile. When omitted, a TUI is opened for profile selection. Normal profiles are read from the `profiles` directory next to the executable. A name beginning with `.` selects a profile from the current working directory. |
 | `-i`, `--input <files...>` | Add input files. A `txt` file is treated as a list with one input per line. Repeated `--input` options are combined. The default is `./input.txt` relative to the current working directory. |
+| `-o`, `--output <path>` | Place each output under this path relative to its input file directory. |
+| `--output-dir <path>` | Place all output files in the specified directory. Relative paths are resolved from the current working directory. |
+| `--output-profile` | Place each output in a profile-named directory under its input file directory. |
 | `--matrix` | Write encoding speed, compression ratio, and quality analysis results as a Markdown table. When used with `--no-stat`, only encoding speed and compression ratio are written. |
 | `--no-stat` | Skip PSNR, SSIM, VMAF, and XPSNR quality analyses. |
 | `--no-log` | Disable console log output. File logging remains enabled. |
@@ -107,7 +110,9 @@ title=My encoded video
 
 ### Output
 
-Encoded files are written next to their source files using the name `<source>_<profile>.<source_extension>`. Regular logs are stored in the `logs` folder, and statistics are stored in the `statistics` folder, both next to the executable.
+Encoded files use the name `<source>_<profile>.<source_extension>`. By default, they are written next to their source files. Use `--output` for a path under each input file directory, `--output-dir` for one shared output directory, or `--output-profile` for a profile-named directory under each input file directory.
+
+Regular logs are stored in the `logs` folder, and statistics are stored in the `statistics` folder, both next to the executable.
 
 ## References
 
