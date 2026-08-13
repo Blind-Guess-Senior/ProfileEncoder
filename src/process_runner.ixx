@@ -23,54 +23,57 @@ import logger;
 namespace asio = boost::asio;
 namespace bp = boost::process::v2;
 
-static std::optional<double> parse_speed(std::string_view speed)
+namespace
 {
-    constexpr std::string_view prefix = "speed=";
-    if (!speed.starts_with(prefix)) {
-        return std::nullopt;
+    std::optional<double> parse_speed(std::string_view speed)
+    {
+        constexpr std::string_view prefix = "speed=";
+        if (!speed.starts_with(prefix)) {
+            return std::nullopt;
+        }
+
+        auto rest = speed.substr(prefix.size());
+
+        const auto firstNonSpace = rest.find_first_not_of(' ');
+        if (firstNonSpace == std::string_view::npos) {
+            return std::nullopt;
+        }
+        rest.remove_prefix(firstNonSpace);
+
+        double value;
+        const auto [ptr, ec] = std::from_chars(rest.data(), rest.data() + rest.size(), value);
+        if (ec != std::errc{}) {
+            return std::nullopt;
+        }
+
+        return value;
     }
 
-    auto rest = speed.substr(prefix.size());
+    std::optional<double> parse_analysis_value(std::string_view summary, std::string_view marker)
+    {
+        const auto markerPosition = summary.find(marker);
+        if (markerPosition == std::string_view::npos) {
+            return std::nullopt;
+        }
 
-    const auto firstNonSpace = rest.find_first_not_of(' ');
-    if (firstNonSpace == std::string_view::npos) {
-        return std::nullopt;
+        auto valueRaw = summary.substr(markerPosition + marker.size());
+
+        const auto firstNonSpace = valueRaw.find_first_not_of(" \t");
+        if (firstNonSpace == std::string_view::npos) {
+            return std::nullopt;
+        }
+        valueRaw.remove_prefix(firstNonSpace);
+
+        double value;
+        const auto [ptr, ec] = std::from_chars(valueRaw.data(), valueRaw.data() + valueRaw.size(), value);
+
+        if (ec != std::errc{} || ptr == valueRaw.data()) {
+            return std::nullopt;
+        }
+
+        return value;
     }
-    rest.remove_prefix(firstNonSpace);
-
-    double value;
-    const auto [ptr, ec] = std::from_chars(rest.data(), rest.data() + rest.size(), value);
-    if (ec != std::errc{}) {
-        return std::nullopt;
-    }
-
-    return value;
-}
-
-static std::optional<double> parse_analysis_value(std::string_view summary, std::string_view marker)
-{
-    const auto markerPosition = summary.find(marker);
-    if (markerPosition == std::string_view::npos) {
-        return std::nullopt;
-    }
-
-    auto valueRaw = summary.substr(markerPosition + marker.size());
-
-    const auto firstNonSpace = valueRaw.find_first_not_of(" \t");
-    if (firstNonSpace == std::string_view::npos) {
-        return std::nullopt;
-    }
-    valueRaw.remove_prefix(firstNonSpace);
-
-    double value;
-    const auto [ptr, ec] = std::from_chars(valueRaw.data(), valueRaw.data() + valueRaw.size(), value);
-
-    if (ec != std::errc{} || ptr == valueRaw.data()) {
-        return std::nullopt;
-    }
-
-    return value;
-}
+} // namespace
 
 export namespace process_runner
 {
